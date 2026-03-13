@@ -3,7 +3,7 @@ import sys
 import glob
 import cv2
 import numpy as np
-import _pickle as cPickle
+import pickle as cPickle
 from tqdm import tqdm
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -28,6 +28,7 @@ def create_img_list(data_dir):
             for img_path in img_list:
                 f.write("%s\n" % img_path)
     # Real dataset
+    """
     for subset in ['train', 'test']:
         img_list = []
         img_dir = os.path.join(data_dir, 'real', subset)
@@ -44,6 +45,7 @@ def create_img_list(data_dir):
             for img_path in img_list:
                 f.write("%s\n" % img_path)
     print('Write all data paths to file done!')
+    """
 
 def load_depth(img_path):
     """ Load depth image from img_path. """
@@ -78,7 +80,9 @@ def process_data(img_path, depth, subset=None):
     coord_map = coord_map[:, :, (2, 1, 0)]
     # flip z axis of coord map
     coord_map = np.array(coord_map, dtype=np.float32) / 255
-    coord_map[:, :, 2] = 1 - coord_map[:, :, 2]
+    #coord_map[:, :, 2] = 1 - coord_map[:, :, 2]
+    # this line should only be active with the NOCS datasets, because it flips the z axis
+    
 
     class_ids = []
     instance_ids = []
@@ -160,7 +164,7 @@ def process_data(img_path, depth, subset=None):
 def annotate_camera_train(data_dir):
     """ Generate gt labels for CAMERA train data. """
     camera_train = open(os.path.join(data_dir, 'camera', 'train_list_all.txt')).read().splitlines()
-    intrinsics = np.array([[577.5, 0, 319.5], [0, 577.5, 239.5], [0, 0, 1]])
+    intrinsics = np.array([[533.38898, 0.0, 320.0],[0.0, 711.65803, 240.0],[0.0, 0.0, 1.0]])    # adjust intrinsics
 
     valid_img_list = []
     for img_path in tqdm(camera_train):
@@ -202,7 +206,7 @@ def annotate_camera_train(data_dir):
 def annotate_real_train(data_dir):
     """ Generate gt labels for Real train data through PnP. """
     real_train = open(os.path.join(data_dir, 'real/train_list_all.txt')).read().splitlines()
-    intrinsics = np.array([[591.0125, 0, 322.525], [0, 590.16775, 244.11084], [0, 0, 1]])
+    intrinsics = np.array([[533.38898, 0.0, 320.0],[0.0, 711.65803, 240.0],[0.0, 0.0, 1.0]])
     # scale factors for all instances
     scale_factors = {}
     path_to_size = glob.glob(os.path.join(data_dir, 'obj_models/real_train', '*_norm.txt'))
@@ -275,11 +279,12 @@ def annotate_test_data(data_dir):
     #   val        3792 imgs        132 imgs         1856 (23) imgs      50 insts
     #   test       0 img            0 img            0 img               2 insts
 
-    camera_val = open(os.path.join(data_dir, 'camera', 'val_list_all.txt')).read().splitlines()
+    #camera_val = open(os.path.join(data_dir, 'camera', 'val_list_all.txt')).read().splitlines()
     real_test = open(os.path.join(data_dir, 'real', 'test_list_all.txt')).read().splitlines()
-    camera_intrinsics = np.array([[577.5, 0, 319.5], [0, 577.5, 239.5], [0, 0, 1]])
-    real_intrinsics = np.array([[591.0125, 0, 322.525], [0, 590.16775, 244.11084], [0, 0, 1]])
+    camera_intrinsics = np.array([[533.38898, 0.0, 320.0],[0.0, 711.65803, 240.0],[0.0, 0.0, 1.0]])
+    real_intrinsics = np.array([[533.38898, 0.0, 320.0],[0.0, 711.65803, 240.0],[0.0, 0.0, 1.0]])
     # compute model size
+    
     model_file_path = ['obj_models/camera_val.pkl', 'obj_models/real_test.pkl']
     models = {}
     for path in model_file_path:
@@ -288,8 +293,8 @@ def annotate_test_data(data_dir):
     model_sizes = {}
     for key in models.keys():
         model_sizes[key] = 2 * np.amax(np.abs(models[key]), axis=0)
-
-    subset_meta = [('real', real_test, real_intrinsics, 'test'), ('camera', camera_val, camera_intrinsics, 'val')]
+    
+    subset_meta = [('real', real_test, real_intrinsics, 'test')]
     for source, img_list, intrinsics, subset in subset_meta:
         valid_img_list = []
         for img_path in tqdm(img_list):
@@ -390,5 +395,5 @@ if __name__ == '__main__':
     create_img_list(data_dir)
     # annotate dataset and re-write valid data to list
     annotate_camera_train(data_dir)
-    annotate_real_train(data_dir)
-    # annotate_test_data(data_dir)
+    #annotate_real_train(data_dir)
+    #annotate_test_data(data_dir)
