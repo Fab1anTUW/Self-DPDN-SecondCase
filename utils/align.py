@@ -120,7 +120,7 @@ def backproject(depth, intrinsics, instance_mask):
 
     return pts, idxs
 
-
+""" Original function
 def align_nocs_to_depth(masks, coords, depth, intrinsics, instance_ids, img_path, verbose=False):
     num_instances = len(instance_ids)
     error_messages = ''
@@ -153,5 +153,99 @@ def align_nocs_to_depth(masks, coords, depth, intrinsics, instance_ids, img_path
         scales[i] = s / 1000.0
         rotations[i, :, :] = R
         translations[i, :] = T / 1000.0
+
+    return scales, rotations, translations, error_messages, elapses
+
+"""
+
+def align_nocs_to_depth(masks, coords, depth, intrinsics, instance_ids, img_path, verbose=False):
+    num_instances = len(instance_ids)
+
+    error_messages = ''
+    elapses = []
+
+    scales = np.zeros(num_instances, dtype=np.float32)
+    rotations = np.zeros((num_instances, 3, 3), dtype=np.float32)
+    translations = np.zeros((num_instances, 3), dtype=np.float32)
+
+    for i in range(num_instances):
+        mask = masks[:, :, i]
+        coord = coords[:, :, i, :]
+
+        # -----------------------------
+        # Backproject
+        # -----------------------------
+        pts, idxs = backproject(depth, intrinsics, mask)
+
+        # Too few points → skip safely
+        if pts is None or pts.shape[0] < 50:
+            if verbose:
+                print(f'[WARN] Instance {instance_ids[i]}: too few depth points')
+            scales[i] = 1.0
+            rotations[i] = np.eye(3)
+            translations[i] = np.zeros(3)
+            continue
+
+        coord_pts = coord[idxs[0], idxs[1], :] - 0.5
+
+        # Remove invalid coord points
+        valid = np.all(np.isfinite(coord_pts), axis=1)
+        coord_pts = coord_pts[valid]
+        pts = pts[valid]
+
+        if coord_pts.shape[0] < 50:
+            if verbose:
+                print(f'[WARN] Instance {instance_ids[i]}: too few valid coord points')
+            scales[i] = 1.0
+            rotations[i] = np.eye(3)
+            translations[i] = np.zeros(3)
+            continue
+
+        # -----------------------------
+        # Estimate transform (SAFE)
+        # -----------------------------
+        try:
+            start = time.time()
+            s, R, T, outtransform = estimateSimilarityTransform(
+                coord_pts, pts, False
+            )
+            elapsed = time.time() - start
+            elapses.append(elapsed)
+
+        except Exception as e:
+            message = (
+                f'[ERROR] Aligning instance {instance_ids[i]} in {img_path} failed. '
+                f'Message: {str(e)}'
+            )
+            print(message)
+            error_messages += message + '\n'
+            s = None
+            R = None
+            T = None
+
+        # -----------------------------
+        # HARD VALIDATION (CRITICAL)
+        # -----------------------------
+        if (
+            s is None
+            or not np.isfinite(s)
+            or R is None
+            or T is None
+            or not np.all(np.isfinite(R))
+            or not np.all(np.isfinite(T))
+        ):
+            if verbose:
+                print(f'[WARN] Instance {instance_ids[i]}: invalid similarity transform')
+            scales[i] = 1.0
+            rotations[i] = np.eye(3)
+            translations[i] = np.zeros(3)
+            continue
+
+        # -----------------------------
+        # Store (unit conversion)
+        # -----------------------------
+        scales[i] = float(s) / 1000.0
+        rotations[i] = R.astype(np.float32)
+        translations[i] = T.astype(np.float32) / 1000.0
 
     return scales, rotations, translations, error_messages, elapses
